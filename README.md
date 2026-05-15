@@ -9,17 +9,16 @@ This document outlines the functional requirements for a system utilizing the **
 | ID | Category | Requirement | Description |
 |:---|:---|:---|:---|
 | FR-01 | Motor Control | PWM Signal Generation | The system shall generate a PWM signal via ESP32 GPIO to regulate effective motor voltage. |
-| FR-02 | Motor Control | Minimum Start Threshold | The system shall only activate the motor if the PWM duty cycle exceeds the 'stiction' threshold (e.g., ~30%). |
-| FR-03 | Motor Control | Soft-Start / Kickstart | The system shall apply a momentary high-voltage pulse (Kickstart) when transitioning from 0 to 1 to overcome static friction. |
-| FR-04 | Motor Control | Linear PWM Mapping | The system shall map UI slider percentage (0-100%) to the hardware PWM range (0-255 or 0-1023). |
-| FR-05 | Sensing | Optical Interrupt Detection | The system shall detect state changes from the LED gate sensor using hardware interrupts. |
-| FR-06 | Sensing | RPM Calculation Logic | The system shall calculate RPM based on the time delta between consecutive sensor pulses. |
-| FR-07 | Sensing | Real-Time Display Refresh | The system shall refresh the RPM numerical data on the CYD screen every 500ms. |
-| FR-08 | Analysis | Input-Feedback Correlation | The system shall allow monitoring of the actual RPM vs. the commanded PWM (Activation Line). |
-| FR-09 | UI/UX | Touch Control Interface | The system shall provide a touch-sensitive slider on the 320x240 TFT to adjust motor power. |
-| FR-10 | UI/UX | Visual Speed Feedback | The system shall display the current RPM alongside a visual progress bar or graph. |
-| FR-11 | Safety | Emergency Shutdown | The system shall provide a dedicated on-screen 'STOP' button to immediately zero the PWM output. |
-| FR-12 | Safety | Stall Protection | The system shall disable PWM output if no pulses are detected for 2 seconds while power is commanded. |
+| FR-02 | Motor Control | Minimum Start Threshold | The system shall activate the motor and slowly increase the pwm duty cycle and mark the value at whch motor starts spinning. |
+| FR-03 | Motor Control | Soft-Start / Kickstart | The system shall apply a momentary high-voltage pulse (Kickstart) when transitioning from 0 to 1 to overcome static friction as user setting. |
+| FR-04 | Sensing | Optical Interrupt Detection | The system shall detect state changes from the LED gate sensor using hardware interrupts. |
+| FR-05 | Sensing | RPM Calculation Logic | The system shall calculate RPM based on the time delta between consecutive sensor pulses. |
+| FR-06 | Sensing | Real-Time Display Refresh | The system shall refresh the RPM numerical data on the CYD screen about every 500ms. |
+| FR-07 | Analysis | Input-Feedback Correlation | The system shall allow monitoring of the actual RPM vs. the commanded PWM (Activation Line). |
+| FR-08 | UI/UX | Touch Control Interface | The system shall provide a touch interface for running tests. |
+| FR-09 | UI/UX | Visual Speed Feedback | The system shall display the current RPM alongside a visual progress bar or graph. |
+| FR-10 | Safety | Emergency Shutdown | The system shall provide a dedicated on-screen 'STOP' button to immediately zero the PWM output. |
+| FR-11 | Safety | Stall Protection | The system shall disable PWM output if no pulses are detected for long time (user set) while power is commanded. |
 
 ### 2. Detailed Activation Logic (RPM vs. PWM)
 
@@ -32,8 +31,8 @@ The system follows a specific activation curve where the motor remains stationar
 
 #### 2.2 Mathematical Model
 The software uses hardware interrupts to ensure accuracy:
-- **Time Delta ($dt$):** Time in microseconds between two LED gate interruptions.
-- **RPM Formula:** $RPM = \frac{60,000,000}{dt \times \text{pulses\_per\_rev}}$
+**Time Delta ($dt$):** Time in microseconds between two LED gate interruptions.
+**RPM Formula:** $RPM = \frac{60,000,000}{dt \times \text{pulses\_per\_rev}}$
 
 ### 3. Hardware Interface Mapping (CYD Specific)
 
@@ -45,4 +44,3 @@ The software uses hardware interrupts to ensure accuracy:
 | **Touch Controller** | Standard SPI | Input |
 
 ---
-*Generated for project development in VS Code with ESP32 Arduino Core.*
