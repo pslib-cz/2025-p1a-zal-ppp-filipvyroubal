@@ -15,7 +15,7 @@
 // ----------------------------
 
 #include <SPI.h>
-
+#include <Preferences.h>
 // ----------------------------
 // Additional Libraries - each one of these will need to be installed.
 // ----------------------------
@@ -54,7 +54,18 @@ XPT2046_Bitbang ts(XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK, XPT2046_CS);
 TFT_eSPI tft = TFT_eSPI();
 
 TFT_eSPI_Button key[6];
-std::vector<TFT_eSPI_Button> menuButtons;
+std::vector<RealButton> menuButtons;
+struct ConstructButton
+{
+  String name;
+  void (*callback)();
+};
+
+struct RealButton
+{
+  TFT_eSPI_Button btn;
+  void (*callback)();
+};
 
 
 void setup() {
@@ -71,10 +82,10 @@ void setup() {
   // Clear the screen before writing to it
   tft.fillScreen(TFT_BLACK);
   tft.setFreeFont(&FreeMono18pt7b);
-  drawMenu({"OK"});
+  drawMenu({"OK","Cancel"});
   
 }
-void drawMenu(const std::vector<String>& names) {
+void drawMenu(const std::vector<ConstructButton>& names) {
   // Clear screen
   tft.fillScreen(TFT_BLUE);
 
@@ -86,7 +97,7 @@ void drawMenu(const std::vector<String>& names) {
 
   int y = 60;
 
-  for (String name : names) {
+  for (ConstructButton name : names) {
     TFT_eSPI_Button btn;
 
     btn.initButton(
@@ -98,12 +109,12 @@ void drawMenu(const std::vector<String>& names) {
       TFT_WHITE,       // outline
       TFT_YELLOW,      // fill
       TFT_BLACK,       // text
-      "",    // label
+      (char*)name.name.c_str(),    // label
       1                // text size
     );
 
-    btn.drawButton(false,name);
-    menuButtons.push_back(btn);
+    btn.drawButton(false);
+    menuButtons.push_back({btn,name.callback});
 
     y += 70;
   }
@@ -129,8 +140,40 @@ void drawButtons() {
     key[i].drawButton(false, String(i+1));
   }
 }
+// Added & to pass by reference so state changes persist
+void getTouchedButton(std::vector<TFT_eSPI_Button> &btns) {
+  TouchPoint p = ts.getTouch();
+  
+  // 1. Map your touch coordinates (Adjustment may be needed based on calibration)
+  // Most CYD displays need mapping from raw touch (approx 0-4000) to pixels (0-320)
+  uint16_t x = map(p.x, 200, 3700, 0, 320);
+  uint16_t y = map(p.y, 240, 3800, 0, 240);
 
+  // 2. Corrected loop condition: b < btns.size()
+  for (uint8_t b = 0; b < btns.size(); ++b) {
+    if ((p.zRaw > 0) && btns[b].contains(p.x, p.y)) {
+      btns[b].press(true);
+      btns[b].drawButton(true);
+    } else {
+      btns[b].press(false);
+      btns[b].drawButton(false);
+    }
+  }
+  /*
+  for (uint8_t b = 0; b < btns.size(); ++b) {
+    if (btns[b].justPressed()) {
+      Serial.printf("Button %d pressed\n", b);
+      btns[b].drawButton(true);
+    }
+
+    if (btns[b].justReleased()) {
+      Serial.printf("Button %d released\n", b);
+      btns[b].drawButton(false);
+    }
+  }*/
+}
 void loop() {
+  getTouchedButton(menuButtons);
   /*
   TouchPoint p = ts.getTouch();
   // Adjust press state of each key appropriately
