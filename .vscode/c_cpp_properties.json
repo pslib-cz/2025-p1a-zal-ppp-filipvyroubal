@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "ESP32-CYD",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Users/filip/OneDrive/Documents/Arduino/libraries/**",
+                "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/hardware/esp32/**",
+                "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/**",
+                "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/tools/esp32-libs/**"
+            ],
+            "defines": [
+                "ESP32",
+                "ARDUINO=10800",
+                "ARDUINO_ARCH_ESP32",
+                "USER_SETUP_LOADED=1"
+            ],
+            "compilerPath": "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/bin/xtensa-esp-elf-gcc.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64"
+        }
+    ],
+    "version": 4
+}
