@@ -47,14 +47,15 @@
 #define XPT2046_MISO 39
 #define XPT2046_CLK 25
 #define XPT2046_CS 33
-// ----------------------------
 
+#define SENSOR_PIN 22
+// ----------------------------
+volatile unsigned long pulseCount = 0;
+volatile float ppm = 0.0;
+SemaphoreHandle_t ppmMutex;
 XPT2046_Bitbang ts(XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK, XPT2046_CS);
 
 TFT_eSPI tft = TFT_eSPI();
-
-TFT_eSPI_Button key[6];
-std::vector<RealButton> menuButtons;
 struct ConstructButton
 {
   String name;
@@ -66,11 +67,49 @@ struct RealButton
   TFT_eSPI_Button btn;
   void (*callback)();
 };
+TFT_eSPI_Button key[6];
+std::vector<RealButton> menuButtons;
 
+void IRAM_ATTR handlePulse(){
+  ++pulseCount;
+}
+void CounterTask(void * pvParameters){
+  unsigned long lastMillis = millis();
+  for(;;){
+    if(millis()-lastMillis >= 5000){
+      noInterrupts();
+      unsigned long snapshotPulses = pulseCount;
+      pulseCount = 0;
+      interrupts();
+      float calculatedPPM = snapshotPulses * 12.0;
+      if (xSemaphoreTake(ppmMutex, portMAX_DELAY)){
+        ppm = calculatedPPM;
+        xSemaphoreGive(ppmMutex);
+      }
+      lastMillis = millis();
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+void StartRPMCount(){
+  attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, FALLING);
+  xTaskCreatePinnedToCore(
+    CounterTask,   // Function to implement the task
+    "PulseTask",        // Name of the task
+    4096,               // Stack size in words
+    NULL,               // Task input parameter
+    1,                  // Priority of the task
+    NULL,               // Task handle
+    0                   // Core ID (0)
+  );
 
+}
 void setup() {
   Serial.begin(115200);
-
+  
+  ppmMutex = xSemaphoreCreateMutex();
+  // Create the background task on Core 0
+  
   // Start the SPI for the touch screen and init the TS library
   ts.begin();
   //ts.setRotation(1);
@@ -82,7 +121,7 @@ void setup() {
   // Clear the screen before writing to it
   tft.fillScreen(TFT_BLACK);
   tft.setFreeFont(&FreeMono18pt7b);
-  drawMenu({"OK","Cancel"});
+  drawMenu({{"OK",StartRPMCount},{"Cancel",StartRPMCount}});
   
 }
 void drawMenu(const std::vector<ConstructButton>& names) {
@@ -141,7 +180,7 @@ void drawButtons() {
   }
 }
 // Added & to pass by reference so state changes persist
-void getTouchedButton(std::vector<TFT_eSPI_Button> &btns) {
+void getTouchedButton(std::vector<RealButton> &btns) {
   TouchPoint p = ts.getTouch();
   
   // 1. Map your touch coordinates (Adjustment may be needed based on calibration)
@@ -151,12 +190,13 @@ void getTouchedButton(std::vector<TFT_eSPI_Button> &btns) {
 
   // 2. Corrected loop condition: b < btns.size()
   for (uint8_t b = 0; b < btns.size(); ++b) {
-    if ((p.zRaw > 0) && btns[b].contains(p.x, p.y)) {
-      btns[b].press(true);
-      btns[b].drawButton(true);
+    if ((p.zRaw > 0) && btns[b].btn.contains(p.x, p.y)) {
+      btns[b].btn.press(true);
+      btns[b].btn.drawButton(true);
+      //btns[b].callback();
     } else {
-      btns[b].press(false);
-      btns[b].drawButton(false);
+      btns[b].btn.press(false);
+      btns[b].btn.drawButton(false);
     }
   }
   /*
@@ -173,7 +213,7 @@ void getTouchedButton(std::vector<TFT_eSPI_Button> &btns) {
   }*/
 }
 void loop() {
-  getTouchedButton(menuButtons);
+  //getTouchedButton(menuButtons);
   /*
   TouchPoint p = ts.getTouch();
   // Adjust press state of each key appropriately
@@ -201,4 +241,18 @@ void loop() {
     }
   }
   delay(50);*/
+  float localPPM = 0.0;
+  
+  // Safely grab the latest PPM calculated by Core 0
+  if (xSemaphoreTake(ppmMutex, int(10 / portTICK_PERIOD_MS))) {
+    localPPM = ppm;
+    xSemaphoreGive(ppmMutex);
+  }
+  
+  // Update your CYD display here with the localPPM value
+  // Example: tft.drawString("PPM: " + String(localPPM), 10, 10);
+  
+  Serial.print("Current PPM: ");
+  Serial.println(localPPM);
+  delay(50);
 }
