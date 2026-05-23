@@ -49,9 +49,13 @@
 #define XPT2046_CS 33
 
 #define SENSOR_PIN 22
+#define IN2 35
+#define PPO 20
 // ----------------------------
 volatile unsigned long pulseCount = 0;
-volatile float ppm = 0.0;
+volatile unsigned long startAt = -1;
+volatile bool testFinished = false;
+std::vector<int> ppm = {};
 SemaphoreHandle_t ppmMutex;
 XPT2046_Bitbang ts(XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK, XPT2046_CS);
 
@@ -67,43 +71,13 @@ struct RealButton
   TFT_eSPI_Button btn;
   void (*callback)();
 };
+struct Point {
+  int x;
+  int y;
+};
 TFT_eSPI_Button key[6];
 std::vector<RealButton> menuButtons;
 
-void IRAM_ATTR handlePulse(){
-  ++pulseCount;
-}
-void CounterTask(void * pvParameters){
-  unsigned long lastMillis = millis();
-  for(;;){
-    if(millis()-lastMillis >= 5000){
-      noInterrupts();
-      unsigned long snapshotPulses = pulseCount;
-      pulseCount = 0;
-      interrupts();
-      float calculatedPPM = snapshotPulses * 12.0;
-      if (xSemaphoreTake(ppmMutex, portMAX_DELAY)){
-        ppm = calculatedPPM;
-        xSemaphoreGive(ppmMutex);
-      }
-      lastMillis = millis();
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-}
-void StartRPMCount(){
-  attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, FALLING);
-  xTaskCreatePinnedToCore(
-    CounterTask,   // Function to implement the task
-    "PulseTask",        // Name of the task
-    4096,               // Stack size in words
-    NULL,               // Task input parameter
-    1,                  // Priority of the task
-    NULL,               // Task handle
-    0                   // Core ID (0)
-  );
-
-}
 void setup() {
   Serial.begin(115200);
   
@@ -119,9 +93,11 @@ void setup() {
   tft.setRotation(1); //This is the display in landscape
 
   // Clear the screen before writing to it
-  tft.fillScreen(TFT_BLACK);
+  tft.fillScreen(TFT_BLUE);
   tft.setFreeFont(&FreeMono18pt7b);
-  drawMenu({{"OK",StartRPMCount},{"Cancel",StartRPMCount}});
+  //SetupMX(IN2);
+  StartRPMCount();
+  //drawMenu({{"OK",StartRPMCount},{"Cancel",StartRPMCount}});
   
 }
 void drawMenu(const std::vector<ConstructButton>& names) {
@@ -213,46 +189,133 @@ void getTouchedButton(std::vector<RealButton> &btns) {
   }*/
 }
 void loop() {
-  //getTouchedButton(menuButtons);
-  /*
-  TouchPoint p = ts.getTouch();
-  // Adjust press state of each key appropriately
-  for (uint8_t b = 0; b < 6; b++) {
-    if ((p.zRaw > 0) && key[b].contains(p.x, p.y)) {
-      key[b].press(true);  // tell the button it is pressed
-    } else {
-      key[b].press(false);  // tell the button it is NOT pressed
-    }
+  getTouchedButton(menuButtons);
+  if (testFinished) {
+    testFinished = false; // Reset the trigger immediately
+    EndMenu();            // Draw the menu cleanly without cross-core crashes
   }
+}
+void drawStatusText(String message, int x, int y, uint8_t size, uint16_t color) {
+  tft.setFreeFont(NULL);       // NULL removes the custom font and restores the default font
+  tft.setTextSize(size);       // 1 is small (8px), 2 is medium (16px), 3 is large (24px)
+  tft.setTextColor(color);     
+  tft.drawString(message.c_str(), x, y); 
+}
+void SetupMX(uint8_t pin){
+  //ledcAttach(pin,5000, 8);
+  ledcAttach(pin, 5000, 8);
 
-  // Check if any key has changed state
-  for (uint8_t b = 0; b < 6; b++) {
-    // If button was just pressed, redraw inverted button
-    if (key[b].justPressed()) {
-      Serial.printf("Button %d pressed\n", b);
-      key[b].drawButton(true, String(b+1));
+}
+void forwardMX(uint8_t pin,int pwm){
+  ledcWrite(pin, pwm);
+}
+void IRAM_ATTR handlePulse(){
+  ++pulseCount;
+}
+void CounterTask(void * pvParameters){
+  unsigned long lastMillis = millis();
+  for(int i = 0;i<=256;){
+    if(millis()-lastMillis >= 100){
+      noInterrupts();
+      unsigned long snapshotPulses = pulseCount;
+      pulseCount = 0;
+      interrupts();
+      float calculatedPPM = (snapshotPulses * 120.0)/PPO;
+      if (xSemaphoreTake(ppmMutex, portMAX_DELAY)){
+        ppm.push_back(calculatedPPM);
+        if((startAt == NULL)&&(calculatedPPM > 0)){
+          startAt = i;
+        }
+        xSemaphoreGive(ppmMutex);
+      }
+      lastMillis = millis();
+      ++i;
+      forwardMX(IN2,i);
     }
-
-    // If button was just released, redraw normal color button
-    if (key[b].justReleased()) {
-      Serial.printf("Button %d released\n", b);
-      Serial.println("Button " + (String)b + " released");
-      key[b].drawButton(false, String(b+1));
-    }
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
-  delay(50);*/
-  float localPPM = 0.0;
-  
-  // Safely grab the latest PPM calculated by Core 0
-  if (xSemaphoreTake(ppmMutex, int(10 / portTICK_PERIOD_MS))) {
-    localPPM = ppm;
+  testFinished = true;
+  detachInterrupt(digitalPinToInterrupt(SENSOR_PIN));
+  vTaskDelete(NULL);
+}
+void StartRPMCount(){
+  tft.fillScreen(TFT_BLUE);
+  ppm.clear();
+  menuButtons.clear();
+  startAt = -1;
+  attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
+  xTaskCreatePinnedToCore(
+    CounterTask,   // Function to implement the task
+    "PulseTask",        // Name of the task
+    4096,               // Stack size in words
+    NULL,               // Task input parameter
+    1,                  // Priority of the task
+    NULL,               // Task handle
+    0                   // Core ID (0)
+  );
+
+}
+void EndMenu(){
+  menuButtons.clear();
+  TFT_eSPI_Button btn;
+  btn.initButton(
+    &tft,
+    TFT_HEIGHT / 2,   // center X
+    25,               // center Y
+    200,             // width
+    50,              // height
+    TFT_WHITE,       // outline
+    TFT_YELLOW,      // fill
+    TFT_BLACK,       // text
+    (char*)"Exit",    // label
+    1                // text size
+  );
+
+  btn.drawButton(false);
+  menuButtons.push_back({btn,StartRPMCount});
+  int maxRPM = 0;
+  String pwmString = "N/A";
+
+  // Protect data reading from cross-core corruption
+  if (xSemaphoreTake(ppmMutex, portMAX_DELAY)) {
+    if (!ppm.empty()) {
+      maxRPM = *std::max_element(ppm.begin(), ppm.end());
+    }
+    if (startAt != -1) {
+      pwmString = String(startAt);
+    }
     xSemaphoreGive(ppmMutex);
   }
-  
-  // Update your CYD display here with the localPPM value
-  // Example: tft.drawString("PPM: " + String(localPPM), 10, 10);
-  
-  Serial.print("Current PPM: ");
-  Serial.println(localPPM);
-  delay(50);
+
+  drawStatusText("Max RPM: " + String(maxRPM), 10, 60,9 ,TFT_WHITE);
+  drawStatusText("Start PWM: " + pwmString, 180, 60, 9,TFT_WHITE);
+  DrawGraph(ppm, 200, 10, 80, 300, 160);
+}
+void DrawGraph(std::vector<int> data, int maxY, int graphX, int graphY, int graphW, int graphH) {
+  if (data.size() < 2) return; 
+  if (maxY <= 0) maxY = 1;
+
+  // Draw a black background bounding box for the graph area
+  tft.fillRect(graphX, graphY, graphW, graphH, TFT_BLACK);
+
+  // Calculate horizontal spacing between points
+  int spacingX = graphW / (data.size() - 1);
+
+  // Calculate the first point's Y position 
+  // (Inverts the point so higher values go UP on the screen)
+  int firstY = graphY + graphH - ((data[0] * graphH) / maxY);
+  firstY = constrain(firstY, graphY, graphY + graphH - 1);
+  Point LastPoint = {graphX, firstY};
+
+  for (size_t i = 1; i < data.size(); ++i) {
+    int nextY = graphY + graphH - ((data[i] * graphH) / maxY);
+    nextY = constrain(nextY, graphY, graphY + graphH - 1);
+    
+    Point NowPoint = {LastPoint.x + spacingX, nextY};
+    
+    // Draw the graph line segment
+    tft.drawLine(LastPoint.x, LastPoint.y, NowPoint.x, NowPoint.y, TFT_WHITE);
+    
+    LastPoint = NowPoint;
+  }
 }
