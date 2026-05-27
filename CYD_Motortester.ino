@@ -1,14 +1,3 @@
-/*******************************************************************
-    TFT_eSPI button example for the ESP32 Cheap Yellow Display.
-
-    https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display
-
-    Written by Claus Näveke
-    Github: https://github.com/TheNitek
- *******************************************************************/
-
-// Make sure to copy the UserSetup.h file into the library as
-// per the Github Instructions. The pins are defined in there.
 
 // ----------------------------
 // Standard Libraries
@@ -16,50 +5,16 @@
 
 #include <SPI.h>
 #include <Preferences.h>
+#include <vector>
+
 // ----------------------------
 // Additional Libraries - each one of these will need to be installed.
 // ----------------------------
 
 #include <XPT2046_Bitbang.h>
-// A library for interfacing with the touch screen
-//
-// Can be installed from the library manager (Search for "XPT2046 Slim")
-// https://github.com/TheNitek/XPT2046_Bitbang_Arduino_Library
 
 #include <TFT_eSPI.h>
-#include <vector>
 
-// A library for interfacing with LCD displays
-//
-// Can be installed from the library manager (Search for "TFT_eSPI")
-// https://github.com/Bodmer/TFT_eSPI
-
-
-// ----------------------------
-// Touch Screen pins
-// ----------------------------
-
-// The CYD touch uses some non default
-// SPI pins
-
-#define XPT2046_IRQ 36
-#define XPT2046_MOSI 32
-#define XPT2046_MISO 39
-#define XPT2046_CLK 25
-#define XPT2046_CS 33
-
-#define SENSOR_PIN 22
-#define IN2 35
-#define PPO 20
-// ----------------------------
-volatile unsigned long pulseCount = 0;
-volatile unsigned long startAt = -1;
-volatile bool testFinished = false;
-std::vector<int> ppm = {};
-SemaphoreHandle_t ppmMutex;
-XPT2046_Bitbang ts(XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK, XPT2046_CS);
-
-TFT_eSPI tft = TFT_eSPI();
 struct ConstructButton
 {
   String name;
@@ -75,12 +30,39 @@ struct Point {
   int x;
   int y;
 };
-TFT_eSPI_Button key[6];
+
+
+#define XPT2046_IRQ 36
+#define XPT2046_MOSI 32
+#define XPT2046_MISO 39
+#define XPT2046_CLK 25
+#define XPT2046_CS 33
+
+#define SENSOR_PIN 35
+#define IN2 22
+#define PPO 20
+
+#define MAIN_MENU std::vector<ConstructButton>{{"StartTest", StartRPMCount}}
+#define CANCEL_MENU std::vector<ConstructButton>{{"CancelTest", CancelTest}}
+// ----------------------------
+volatile unsigned long pulseCount = 0;
+volatile unsigned long startAt = -1;
+std::vector<int> ppm = {};
+
+volatile bool testFinished = false;
+TaskHandle_t CoreOneTask = NULL;
+
+SemaphoreHandle_t ppmMutex;
+XPT2046_Bitbang ts(XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK, XPT2046_CS);
+TFT_eSPI tft = TFT_eSPI();
+
 std::vector<RealButton> menuButtons;
+
+void (*DoEveryFrame)();
 
 void setup() {
   Serial.begin(115200);
-  
+  DoEveryFrame = getTouchedButton;
   ppmMutex = xSemaphoreCreateMutex();
   // Create the background task on Core 0
   
@@ -96,10 +78,20 @@ void setup() {
   tft.fillScreen(TFT_BLUE);
   tft.setFreeFont(&FreeMono18pt7b);
   //SetupMX(IN2);
-  StartRPMCount();
-  //drawMenu({{"OK",StartRPMCount},{"Cancel",StartRPMCount}});
+  drawMenu(MAIN_MENU);
   
 }
+
+
+void TestFinished(){
+  getTouchedButton();
+  if (testFinished) {
+    testFinished = false; // Reset the trigger immediately
+    EndMenu();            // Draw the menu cleanly without cross-core crashes
+    DoEveryFrame = getTouchedButton;
+  }
+}
+
 void drawMenu(const std::vector<ConstructButton>& names) {
   // Clear screen
   tft.fillScreen(TFT_BLUE);
@@ -134,72 +126,33 @@ void drawMenu(const std::vector<ConstructButton>& names) {
     y += 70;
   }
 }
-
-
-void drawButtons() {
-  uint16_t bWidth = TFT_HEIGHT/3;
-  uint16_t bHeight = TFT_WIDTH/2;
-  // Generate buttons with different size X deltas
-  for (int i = 0; i < 6; i++) {
-    key[i].initButton(&tft,
-                      bWidth * (i%3) + bWidth/2,
-                      bHeight * (i/3) + bHeight/2,
-                      bWidth,
-                      bHeight,
-                      TFT_BLACK, // Outline
-                      TFT_BLUE, // Fill
-                      TFT_BLACK, // Text
-                      "",
-                      1);
-
-    key[i].drawButton(false, String(i+1));
-  }
-}
-// Added & to pass by reference so state changes persist
-void getTouchedButton(std::vector<RealButton> &btns) {
+void getTouchedButton() {
   TouchPoint p = ts.getTouch();
-  
-  // 1. Map your touch coordinates (Adjustment may be needed based on calibration)
-  // Most CYD displays need mapping from raw touch (approx 0-4000) to pixels (0-320)
-  uint16_t x = map(p.x, 200, 3700, 0, 320);
-  uint16_t y = map(p.y, 240, 3800, 0, 240);
 
-  // 2. Corrected loop condition: b < btns.size()
-  for (uint8_t b = 0; b < btns.size(); ++b) {
-    if ((p.zRaw > 0) && btns[b].btn.contains(p.x, p.y)) {
-      btns[b].btn.press(true);
-      btns[b].btn.drawButton(true);
-      //btns[b].callback();
+  for (uint8_t b = 0; b < menuButtons.size(); ++b) {
+    if ((p.zRaw > 0) && menuButtons[b].btn.contains(p.x, p.y)) {
+      menuButtons[b].btn.press(true);
     } else {
-      btns[b].btn.press(false);
-      btns[b].btn.drawButton(false);
+      menuButtons[b].btn.press(false);
+    }
+    if(menuButtons[b].btn.justPressed()){
+      menuButtons[b].btn.drawButton(true);
+      menuButtons[b].callback();
+    }
+    else if(menuButtons[b].btn.justReleased()){
+      menuButtons[b].btn.drawButton(false);
     }
   }
-  /*
-  for (uint8_t b = 0; b < btns.size(); ++b) {
-    if (btns[b].justPressed()) {
-      Serial.printf("Button %d pressed\n", b);
-      btns[b].drawButton(true);
-    }
-
-    if (btns[b].justReleased()) {
-      Serial.printf("Button %d released\n", b);
-      btns[b].drawButton(false);
-    }
-  }*/
 }
 void loop() {
-  getTouchedButton(menuButtons);
-  if (testFinished) {
-    testFinished = false; // Reset the trigger immediately
-    EndMenu();            // Draw the menu cleanly without cross-core crashes
-  }
+  DoEveryFrame();
 }
 void drawStatusText(String message, int x, int y, uint8_t size, uint16_t color) {
   tft.setFreeFont(NULL);       // NULL removes the custom font and restores the default font
   tft.setTextSize(size);       // 1 is small (8px), 2 is medium (16px), 3 is large (24px)
   tft.setTextColor(color);     
   tft.drawString(message.c_str(), x, y); 
+  tft.setFreeFont(&FreeMono18pt7b);
 }
 void SetupMX(uint8_t pin){
   //ledcAttach(pin,5000, 8);
@@ -214,16 +167,18 @@ void IRAM_ATTR handlePulse(){
 }
 void CounterTask(void * pvParameters){
   unsigned long lastMillis = millis();
+  SetupMX(IN2);
   for(int i = 0;i<=256;){
-    if(millis()-lastMillis >= 100){
+    unsigned long millisP = millis()-lastMillis;
+    if(millisP >= 250){
       noInterrupts();
       unsigned long snapshotPulses = pulseCount;
       pulseCount = 0;
       interrupts();
-      float calculatedPPM = (snapshotPulses * 120.0)/PPO;
+      float calculatedPPM = (snapshotPulses * (60000/millisP))/PPO;
       if (xSemaphoreTake(ppmMutex, portMAX_DELAY)){
         ppm.push_back(calculatedPPM);
-        if((startAt == NULL)&&(calculatedPPM > 0)){
+        if((startAt == -1)&&(calculatedPPM > 0)){
           startAt = i;
         }
         xSemaphoreGive(ppmMutex);
@@ -232,6 +187,10 @@ void CounterTask(void * pvParameters){
       ++i;
       forwardMX(IN2,i);
     }
+    if(testFinished){
+      forwardMX(IN2,0);
+      break;
+    }
     vTaskDelay(pdMS_TO_TICKS(10));
   }
   testFinished = true;
@@ -239,10 +198,11 @@ void CounterTask(void * pvParameters){
   vTaskDelete(NULL);
 }
 void StartRPMCount(){
-  tft.fillScreen(TFT_BLUE);
+  delay(500);
   ppm.clear();
-  menuButtons.clear();
+  drawMenu(CANCEL_MENU);
   startAt = -1;
+  DoEveryFrame = TestFinished;
   attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
   xTaskCreatePinnedToCore(
     CounterTask,   // Function to implement the task
@@ -250,12 +210,32 @@ void StartRPMCount(){
     4096,               // Stack size in words
     NULL,               // Task input parameter
     1,                  // Priority of the task
-    NULL,               // Task handle
+    &CoreOneTask,               // Task handle
     0                   // Core ID (0)
   );
 
 }
+void GetBackToMainMenu(){
+  drawMenu(MAIN_MENU);
+  delay(500);
+}
+void CancelTest(){
+  forwardMX(IN2, 0); 
+  
+  // 2. Detach sensor checking interrupts
+  detachInterrupt(digitalPinToInterrupt(SENSOR_PIN));
+
+  // 3. Delete the running thread if it exists
+  if (CoreOneTask != NULL) {
+    vTaskDelete(CoreOneTask);
+    CoreOneTask = NULL; // Reset handle tracking
+  }
+
+  // 4. Force the UI to show the final menu metrics screen
+  testFinished = true;
+}
 void EndMenu(){
+  tft.fillScreen(TFT_BLUE);
   menuButtons.clear();
   TFT_eSPI_Button btn;
   btn.initButton(
@@ -272,7 +252,7 @@ void EndMenu(){
   );
 
   btn.drawButton(false);
-  menuButtons.push_back({btn,StartRPMCount});
+  menuButtons.push_back({btn,GetBackToMainMenu});
   int maxRPM = 0;
   String pwmString = "N/A";
 
@@ -287,9 +267,9 @@ void EndMenu(){
     xSemaphoreGive(ppmMutex);
   }
 
-  drawStatusText("Max RPM: " + String(maxRPM), 10, 60,9 ,TFT_WHITE);
-  drawStatusText("Start PWM: " + pwmString, 180, 60, 9,TFT_WHITE);
-  DrawGraph(ppm, 200, 10, 80, 300, 160);
+  drawStatusText("Max RPM: " + String(maxRPM), 10, 60,1 ,TFT_WHITE);
+  drawStatusText("Start PWM: " + pwmString, 180, 60, 1,TFT_WHITE);
+  DrawGraph(ppm, *std::max_element(ppm.begin(), ppm.end()), 10, 80, 300, 160);
 }
 void DrawGraph(std::vector<int> data, int maxY, int graphX, int graphY, int graphW, int graphH) {
   if (data.size() < 2) return; 
