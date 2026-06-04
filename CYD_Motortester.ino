@@ -42,8 +42,12 @@ struct Point {
 #define IN2 22
 #define PPO 20
 
-#define MAIN_MENU std::vector<ConstructButton>{{"StartTest", StartRPMCount}}
+#define MAIN_MENU std::vector<ConstructButton>{{"StartTest", StartRPMCount},{"Settings",StartSettings}}
 #define CANCEL_MENU std::vector<ConstructButton>{{"CancelTest", CancelTest}}
+#define SETTINGS_MENU std::vector<ConstructButton>
+
+Preferences prefs;
+bool doKick;
 // ----------------------------
 volatile unsigned long pulseCount = 0;
 volatile unsigned long startAt = -1;
@@ -79,9 +83,10 @@ void setup() {
   tft.setFreeFont(&FreeMono18pt7b);
   //SetupMX(IN2);
   drawMenu(MAIN_MENU);
+  prefs.begin("settings",false);
+  doKick = prefs.getBool("doKick",false);
   
 }
-
 
 void TestFinished(){
   getTouchedButton();
@@ -297,5 +302,27 @@ void DrawGraph(std::vector<int> data, int maxY, int graphX, int graphY, int grap
     tft.drawLine(LastPoint.x, LastPoint.y, NowPoint.x, NowPoint.y, TFT_WHITE);
     
     LastPoint = NowPoint;
+  }
+}
+void setKickDo(){
+  doKick = !doKick;
+  prefs.putBool("doKick", doKick);
+}
+void OpenSettings(){
+  DoEveryFrame = SettingsDoFrame;
+  drawMenu(SETTINGS_MENU);
+  
+}
+void SettingsDoFrame(){
+  TouchPoint p = ts.getTouch();
+    if ((p.zRaw > 0) && menuButtons[0].btn.contains(p.x, p.y)) {
+      menuButtons[0].btn.press(true);
+    } else {
+      menuButtons[0].btn.press(false);
+    }
+    if(menuButtons[0].btn.justPressed()){
+      menuButtons[0].callback();
+      menuButtons[0].btn.drawButton(doKick);
+    }
   }
 }
