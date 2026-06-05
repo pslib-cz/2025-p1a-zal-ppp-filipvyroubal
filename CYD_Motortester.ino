@@ -18,13 +18,15 @@
 struct ConstructButton
 {
   String name;
-  void (*callback)();
+  void (*callback)(TFT_eSPI_Button);
+  bool isToggle;
 };
 
 struct RealButton
 {
   TFT_eSPI_Button btn;
   void (*callback)();
+  bool isToggle;
 };
 struct Point {
   int x;
@@ -42,13 +44,63 @@ struct Point {
 #define IN2 22
 #define PPO 20
 
-#define MAIN_MENU std::vector<ConstructButton>{{"StartTest", StartRPMCount},{"Settings",StartSettings}}
-#define CANCEL_MENU std::vector<ConstructButton>{{"CancelTest", CancelTest}}
-#define SETTINGS_MENU std::vector<ConstructButton>
+#define MAIN_MENU std::vector<ConstructButton>{{"StartTest", StartRPMCount,false},{"Settings",OpenSettings, false}}
+//=================== Functions for this menu ===============
+//Start Test
+void StartRPMCount(TFT_eSPI_Button btn){
+  delay(500);
+  ppm.clear();
+  drawMenu(CANCEL_MENU);
+  startAt = -1;
+  DoEveryFrame = TestFinished;
+  attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
+  xTaskCreatePinnedToCore(
+    CounterTask,   // Function to implement the task
+    "PulseTask",        // Name of the task
+    4096,               // Stack size in words
+    NULL,               // Task input parameter
+    1,                  // Priority of the task
+    &CoreOneTask,               // Task handle
+    0                   // Core ID (0)
+  );
+
+}
+//Settings
+void OpenSettings(TFT_eSPI_Button btn){
+  DoEveryFrame = getTouchedButton;
+  drawMenu(SETTINGS_MENU);
+}
+#define CANCEL_MENU std::vector<ConstructButton>{{"CancelTest", CancelTest,false}}
+//=================== Functions for this menu ===================
+//CancelTest
+void CancelTest(TFT_eSPI_Button btn){
+  forwardMX(IN2, 0); 
+  detachInterrupt(digitalPinToInterrupt(SENSOR_PIN));
+  // 3. Delete the running thread if it exists
+  if (CoreOneTask != NULL) {
+    vTaskDelete(CoreOneTask);
+    CoreOneTask = NULL; // Reset handle tracking
+  }
+  // 4. Force the UI to show the final menu metrics screen
+  testFinished = true;
+}
+#define SETTINGS_MENU std::vector<ConstructButton>{{"Back", GetBackToMainMenu, false},{"doKick",setKickDo,true}}
+//=================== Functions for this menu ===================
+//Back
+void GetBackToMainMenu(TFT_eSPI_Button btn){
+  drawMenu(MAIN_MENU);
+  delay(500);
+}
+//doKick
+void setKickDo(TFT_eSPI_Button btn){
+  doKick = !doKick;
+  prefs.putBool("doKick", doKick);
+  btn.drawButton(doKick);
+}
 
 Preferences prefs;
 bool doKick;
-// ----------------------------
+
 volatile unsigned long pulseCount = 0;
 volatile unsigned long startAt = -1;
 std::vector<int> ppm = {};
@@ -64,6 +116,7 @@ std::vector<RealButton> menuButtons;
 
 void (*DoEveryFrame)();
 
+//=================== Functions for this menu ===================
 void setup() {
   Serial.begin(115200);
   DoEveryFrame = getTouchedButton;
@@ -126,7 +179,7 @@ void drawMenu(const std::vector<ConstructButton>& names) {
     );
 
     btn.drawButton(false);
-    menuButtons.push_back({btn,name.callback});
+    menuButtons.push_back({btn,name.callback,name.isToggle});
 
     y += 70;
   }
@@ -141,11 +194,22 @@ void getTouchedButton() {
       menuButtons[b].btn.press(false);
     }
     if(menuButtons[b].btn.justPressed()){
-      menuButtons[b].btn.drawButton(true);
-      menuButtons[b].callback();
+      if(menuButtons[b].isToggle){
+        menuButtons[b].callback(menuButtons[b].btn);
+      }
+      else{
+        menuButtons[b].callback(menuButtons[b].btn);
+        menuButtons[b].btn.drawButton(true);
+      }
     }
     else if(menuButtons[b].btn.justReleased()){
-      menuButtons[b].btn.drawButton(false);
+      if(menuButtons[b].isToggle){
+        menuButtons[b].callback(menuButtons[b].btn);
+      }
+      else{
+        menuButtons[b].callback(menuButtons[b].btn);
+        menuButtons[b].btn.drawButton(true);
+      }
     }
   }
 }
@@ -202,43 +266,8 @@ void CounterTask(void * pvParameters){
   detachInterrupt(digitalPinToInterrupt(SENSOR_PIN));
   vTaskDelete(NULL);
 }
-void StartRPMCount(){
-  delay(500);
-  ppm.clear();
-  drawMenu(CANCEL_MENU);
-  startAt = -1;
-  DoEveryFrame = TestFinished;
-  attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
-  xTaskCreatePinnedToCore(
-    CounterTask,   // Function to implement the task
-    "PulseTask",        // Name of the task
-    4096,               // Stack size in words
-    NULL,               // Task input parameter
-    1,                  // Priority of the task
-    &CoreOneTask,               // Task handle
-    0                   // Core ID (0)
-  );
 
-}
-void GetBackToMainMenu(){
-  drawMenu(MAIN_MENU);
-  delay(500);
-}
-void CancelTest(){
-  forwardMX(IN2, 0); 
-  
-  // 2. Detach sensor checking interrupts
-  detachInterrupt(digitalPinToInterrupt(SENSOR_PIN));
 
-  // 3. Delete the running thread if it exists
-  if (CoreOneTask != NULL) {
-    vTaskDelete(CoreOneTask);
-    CoreOneTask = NULL; // Reset handle tracking
-  }
-
-  // 4. Force the UI to show the final menu metrics screen
-  testFinished = true;
-}
 void EndMenu(){
   tft.fillScreen(TFT_BLUE);
   menuButtons.clear();
@@ -304,25 +333,4 @@ void DrawGraph(std::vector<int> data, int maxY, int graphX, int graphY, int grap
     LastPoint = NowPoint;
   }
 }
-void setKickDo(){
-  doKick = !doKick;
-  prefs.putBool("doKick", doKick);
-}
-void OpenSettings(){
-  DoEveryFrame = SettingsDoFrame;
-  drawMenu(SETTINGS_MENU);
-  
-}
-void SettingsDoFrame(){
-  TouchPoint p = ts.getTouch();
-    if ((p.zRaw > 0) && menuButtons[0].btn.contains(p.x, p.y)) {
-      menuButtons[0].btn.press(true);
-    } else {
-      menuButtons[0].btn.press(false);
-    }
-    if(menuButtons[0].btn.justPressed()){
-      menuButtons[0].callback();
-      menuButtons[0].btn.drawButton(doKick);
-    }
-  }
-}
+
