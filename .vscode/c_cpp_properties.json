@@ -7,7 +7,9 @@
                 "C:/Users/filip/OneDrive/Documents/Arduino/libraries/**",
                 "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/hardware/esp32/**",
                 "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/**",
-                "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/tools/esp32-libs/**"
+                "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/tools/esp32-libs/**",
+                "C:/Users/filip/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.8/libraries/SPI/src",
+                "${workspaceFolder}"
             ],
             "defines": [
                 "ESP32",
