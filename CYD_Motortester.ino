@@ -180,7 +180,17 @@ void EndMenu(){
   drawStatusText("Start PWM: " + pwmString, 180, 60, 1,TFT_WHITE);
   DrawGraph(ppm, *std::max_element(ppm.begin(), ppm.end()), 10, 80, 300, 160);
 }
-//=================== Motor functions ===================
+
+
+void TestFinished(){
+  getTouchedButton();
+  if (testFinished) {
+    testFinished = false; // Reset the trigger immediately
+    EndMenu();            // Draw the menu cleanly without cross-core crashes
+    DoEveryFrame = getTouchedButton;
+  }
+}
+
 
 void setup() {
   Serial.begin(115200);
@@ -206,18 +216,13 @@ void setup() {
   
 }
 
-void TestFinished(){
-  getTouchedButton();
-  if (testFinished) {
-    testFinished = false; // Reset the trigger immediately
-    EndMenu();            // Draw the menu cleanly without cross-core crashes
-    DoEveryFrame = getTouchedButton;
-  }
-}
-
 void loop() {
   DoEveryFrame();
 }
+
+
+//=================== Motor functions ===================
+
 
 void SetupMX(uint8_t pin){
   //ledcAttach(pin,5000, 8);
@@ -233,12 +238,13 @@ void IRAM_ATTR handlePulse(){
 void CounterTask(void * pvParameters){
   unsigned long lastMillis = millis();
   SetupMX(IN2);
+  if(doKick){
+    forwardMX(IN2,250);
+    Serial.println("doingKick");
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
   for(int i = 0;i<=256;){
     unsigned long millisP = millis()-lastMillis;
-    if(doKick){
-      forwardMX(IN2,250);
-      Serial.println("doingKick");
-    }
     if(millisP >= 250){
       noInterrupts();
       unsigned long snapshotPulses = pulseCount;
