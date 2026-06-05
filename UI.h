@@ -102,4 +102,14 @@ class Toggle : public UIComponent {
     }
 };
 
+class ProgressBar : public UIComponent {
+    public:
+    TFT_eSPI &tft;
+    ProgressBar(int x, int y, int width, int height, Style style, TFT_eSPI &tft) : UIComponent(x,y,width,height){
+        this->tft = tft;
+        tft.fillRect(x,y,width,height,style.outline);
+        tft.fillRect(x-10,y-10,width-10,height-10,style.fill);
+    }
+};
+
 #endif

@@ -50,16 +50,20 @@ struct Point {
 
 #define MAIN_MENU std::vector<ConstructButton>{{"StartTest", StartRPMCount,false,false},{"Settings",OpenSettings, false, false}}
 #define CANCEL_MENU std::vector<ConstructButton>{{"CancelTest", CancelTest,false,false}}
-#define SETTINGS_MENU std::vector<ConstructButton>{{"Back", GetBackToMainMenu, false, false},{"doKick",setKickDo,true, doKick}}
+#define SETTINGS_MENU std::vector<ConstructButton>{{"Back", GetBackToMainMenu, false, false},{"doKick",setKickDo,true, doKick},{"stallProtection",setStallProtection,true,stallProtection}}
+
+#define STILL_STALL_PWM 80
 
 Preferences prefs;
 bool doKick;
+bool stallProtection;
 
 volatile unsigned long pulseCount = 0;
 volatile unsigned long startAt = -1;
 std::vector<int> ppm = {};
 
 volatile bool testFinished = false;
+volatile bool testExited = false;
 TaskHandle_t CoreOneTask = NULL;
 
 SemaphoreHandle_t ppmMutex;
@@ -182,11 +186,23 @@ void EndMenu(){
 }
 
 
+void errMenu(){
+  tft.fillScreen(TFT_BLUE);
+  menuButtons.clear();
+  menuButtons.push_back(new Button((int)TFT_HEIGHT / 2,25,200,50,(String)"Exit",btn,GetBackToMainMenu,tft));
+  drawStatusText("Error occured test has not finished",(int)TFT_HEIGHT / 2, 60, 9, TFT_BLACK);
+}
+
 void TestFinished(){
   getTouchedButton();
   if (testFinished) {
     testFinished = false; // Reset the trigger immediately
-    EndMenu();            // Draw the menu cleanly without cross-core crashes
+    if(testExited){
+      errMenu();
+    }
+    else{
+      EndMenu();            // Draw the menu cleanly without cross-core crashes
+    }
     DoEveryFrame = getTouchedButton;
   }
 }
@@ -213,6 +229,7 @@ void setup() {
   drawMenu(MAIN_MENU);
   prefs.begin("settings",false);
   doKick = prefs.getBool("doKick",false);
+  stallProtection = prefs.getBool("stallProtection",false);
   
 }
 
@@ -260,12 +277,21 @@ void CounterTask(void * pvParameters){
       }
       lastMillis = millis();
       ++i;
+      if(stallProtection){
+      if((i >= STILL_STALL_PWM)&&(startAt == -1)){
+        if(xSemaphoreTake(ppmMutex,portMAX_DELAY)){
+          testFinished = true;
+          testExited = true;
+        }
+      }
+    }
     }
     forwardMX(IN2,i);
     if(testFinished){
       forwardMX(IN2,0);
       break;
     }
+    
     vTaskDelay(pdMS_TO_TICKS(10));
   }
   testFinished = true;
@@ -322,6 +348,11 @@ void GetBackToMainMenu(){
 void setKickDo(){
   doKick = !doKick;
   prefs.putBool("doKick", doKick);
+}
+//stallProtection
+void setStallProtection(){
+  stallProtection = !stallProtection;
+  prefs.putBool("stallProtection",stallProtection);
 }
 
 
