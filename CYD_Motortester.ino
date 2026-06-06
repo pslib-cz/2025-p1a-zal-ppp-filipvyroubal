@@ -216,7 +216,7 @@ void TestFinished(){
 void updateData(){
   if (xSemaphoreTake(ppmMutex,portMAX_DELAY)){
     dynamic_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
-    dynamic_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(ppm[-1]);
+    dynamic_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(ppm.back());
     xSemaphoreGive(ppmMutex);
   }
 }
@@ -286,7 +286,7 @@ void CounterTask(void * pvParameters){
         if((startAt == -1)&&(calculatedPPM > 0)){
           startAt = i;
         }
-        percentage = i/256;
+        percentage = (float)i/256.0f;
         xSemaphoreGive(ppmMutex);
       }
       lastMillis = millis();
@@ -320,8 +320,9 @@ void StartRPMCount(){
   delay(500);
   ppm.clear();
   drawMenu(CANCEL_MENU);
-  otherOnscreen["testPercentage"] = new ProgressBar(0,menuButtons[-1]->y+70,TFT_HEIGHT,100,pb,tft,"testPercentage");
-  otherOnscreen["actualRPM"] = new KeyValue(TFT_HEIGHT/2,menuButtons[-1]->y+140,40,40,"actualRPM",btn,tft,8,"actualRPM");
+  otherOnscreen.clear();
+  otherOnscreen["testPercentage"] = new ProgressBar(0,menuButtons.back()->y+70,TFT_HEIGHT,100,pb,tft,"testPercentage");
+  otherOnscreen["actualRPM"] = new KeyValue(TFT_HEIGHT/2,menuButtons.back()->y+140,40,40,"actualRPM",btn,tft,8,"actualRPM");
   startAt = -1;
   DoEveryFrame = TestFinished;
   attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
