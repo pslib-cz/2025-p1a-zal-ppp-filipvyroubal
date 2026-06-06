@@ -22,8 +22,9 @@ public:
     int width;
     int height;
     TFT_eSPI_Button btn;
+    String id;
 
-    UIComponent(int x, int y, int w, int h) : x(x), y(y), width(w), height(h) {}
+    UIComponent(int x, int y, int w, int h, String id) : x(x), y(y), width(w), height(h), id(id) {}
     // Pure virtual functions (notice the = 0)
     // Every class inheriting from this MUST provide its own version of these
     virtual void clicked() = 0;
@@ -37,7 +38,7 @@ class Button : public UIComponent {
         String name;
         void (*callback)();
         
-        Button(int x, int y, int width, int height, String label, Style style, void (*callback)(), TFT_eSPI &tft) : UIComponent(x,y,width,height){
+        Button(int x, int y, int width, int height, String label, Style style, void (*callback)(), TFT_eSPI &tft) : UIComponent(x,y,width,height, label){
             this->name = label;
             this->callback = callback;
             this->btn.initButton(
@@ -70,7 +71,7 @@ class Toggle : public UIComponent {
     void (*callback)();
     bool state;
 
-    Toggle(int x, int y, int width, int height, String label, Style style, void (*callback)(), TFT_eSPI &tft, bool state) : UIComponent(x,y,width,height){
+    Toggle(int x, int y, int width, int height, String label, Style style, void (*callback)(), TFT_eSPI &tft, bool state) : UIComponent(x,y,width,height, label){
         this->name = label;
         this->callback = callback;
         this->btn.initButton(
@@ -105,11 +106,44 @@ class Toggle : public UIComponent {
 class ProgressBar : public UIComponent {
     public:
     TFT_eSPI &tft;
-    ProgressBar(int x, int y, int width, int height, Style style, TFT_eSPI &tft) : UIComponent(x,y,width,height){
-        this->tft = tft;
+    Style style;
+    ProgressBar(int x, int y, int width, int height, Style style, TFT_eSPI &tft, String id) : UIComponent(x,y,width,height, id), tft(tft){
+        this->style = style;
         tft.fillRect(x,y,width,height,style.outline);
         tft.fillRect(x-10,y-10,width-10,height-10,style.fill);
     }
+    void clicked() override{}
+    void released() override{}
+    void setProgress(float percentage){
+        int w = percentage*(this->width-20);
+        this->tft.fillRect(x-20,y-20,w,height - 20,this->style.activeFill);
+    }
+};
+
+class KeyValue : public UIComponent {
+    public:
+        TFT_eSPI &tft;
+        Style style;
+        String label;
+        int textSize;
+        KeyValue(int x, int y, int width, int height, String label, Style style, TFT_eSPI &tft, int textSize, String id) : UIComponent(x,y,width,height, id), tft(tft){
+            this->label = label;
+            this->textSize = textSize;
+            this->style = style;
+            drawString(label);
+        }
+        void changeValue(int value){
+            drawString(label+": "+String(value));
+        }
+        void drawString(String text){
+            this->tft.setFreeFont(NULL);       // NULL removes the custom font and restores the default font
+            this->tft.setTextSize(this->textSize);       // 1 is small (8px), 2 is medium (16px), 3 is large (24px)
+            this->tft.setTextColor(this->style.text);     
+            this->tft.drawString(text.c_str(), this->x, this->y); 
+            this->tft.setFreeFont(&FreeMono18pt7b);
+        }
+        void clicked() override {}
+        void released() override {}
 };
 
 #endif

@@ -6,6 +6,7 @@
 #include <SPI.h>
 #include <Preferences.h>
 #include <vector>
+#include <unordered_map>
 
 // ----------------------------
 // Additional Libraries - each one of these will need to be installed.
@@ -60,6 +61,8 @@ bool stallProtection;
 
 volatile unsigned long pulseCount = 0;
 volatile unsigned long startAt = -1;
+volatile float percentage = 0;
+
 std::vector<int> ppm = {};
 
 volatile bool testFinished = false;
@@ -71,7 +74,9 @@ XPT2046_Bitbang ts(XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK, XPT2046_CS);
 TFT_eSPI tft = TFT_eSPI();
 
 std::vector<UIComponent*> menuButtons;
-Style btn = {TFT_WHITE,TFT_YELLOW,TFT_BLACK,TFT_BLUE};
+std::unordered_map<String, UIComponent*> otherOnscreen;
+const Style btn = {TFT_WHITE,TFT_YELLOW,TFT_BLACK,TFT_BLUE};
+const Style pb = {TFT_BLACK,TFT_DARKGREY,TFT_BLACK,TFT_GREEN};
 
 void (*DoEveryFrame)();
 
@@ -195,6 +200,7 @@ void errMenu(){
 
 void TestFinished(){
   getTouchedButton();
+  updateData();
   if (testFinished) {
     testFinished = false; // Reset the trigger immediately
     if(testExited){
@@ -207,6 +213,13 @@ void TestFinished(){
   }
 }
 
+void updateData(){
+  if (xSemaphoreTake(ppmMutex,portMAX_DELAY)){
+    dynamic_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
+    dynamic_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(ppm[-1]);
+    xSemaphoreGive(ppmMutex);
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -273,6 +286,7 @@ void CounterTask(void * pvParameters){
         if((startAt == -1)&&(calculatedPPM > 0)){
           startAt = i;
         }
+        percentage = i/256;
         xSemaphoreGive(ppmMutex);
       }
       lastMillis = millis();
@@ -282,6 +296,7 @@ void CounterTask(void * pvParameters){
         if(xSemaphoreTake(ppmMutex,portMAX_DELAY)){
           testFinished = true;
           testExited = true;
+          xSemaphoreGive(ppmMutex);
         }
       }
     }
@@ -305,6 +320,8 @@ void StartRPMCount(){
   delay(500);
   ppm.clear();
   drawMenu(CANCEL_MENU);
+  otherOnscreen["testPercentage"] = new ProgressBar(0,menuButtons[-1]->y+70,TFT_HEIGHT,100,pb,tft,"testPercentage");
+  otherOnscreen["actualRPM"] = new KeyValue(TFT_HEIGHT/2,menuButtons[-1]->y+140,40,40,"actualRPM",btn,tft,8,"actualRPM");
   startAt = -1;
   DoEveryFrame = TestFinished;
   attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
