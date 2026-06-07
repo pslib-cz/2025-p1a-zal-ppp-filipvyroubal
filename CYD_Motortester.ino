@@ -45,7 +45,7 @@ struct Point {
 #define XPT2046_CLK 25
 #define XPT2046_CS 33
 
-#define SENSOR_PIN 35
+#define SENSOR_PIN 27
 #define IN2 22
 #define PPO 20
 
@@ -74,7 +74,7 @@ XPT2046_Bitbang ts(XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK, XPT2046_CS);
 TFT_eSPI tft = TFT_eSPI();
 
 std::vector<UIComponent*> menuButtons;
-std::unordered_map<String, UIComponent*> otherOnscreen;
+std::unordered_map<std::string, UIComponent*> otherOnscreen;
 const Style btn = {TFT_WHITE,TFT_YELLOW,TFT_BLACK,TFT_BLUE};
 const Style pb = {TFT_BLACK,TFT_DARKGREY,TFT_BLACK,TFT_GREEN};
 
@@ -215,8 +215,10 @@ void TestFinished(){
 
 void updateData(){
   if (xSemaphoreTake(ppmMutex,portMAX_DELAY)){
-    dynamic_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
-    dynamic_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(ppm.back());
+    static_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
+    if(!ppm.empty()){
+      static_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(ppm.back());
+    }
     xSemaphoreGive(ppmMutex);
   }
 }
@@ -239,11 +241,12 @@ void setup() {
   tft.fillScreen(TFT_BLUE);
   tft.setFreeFont(&FreeMono18pt7b);
   //SetupMX(IN2);
-  drawMenu(MAIN_MENU);
+  
   prefs.begin("settings",false);
   doKick = prefs.getBool("doKick",false);
   stallProtection = prefs.getBool("stallProtection",false);
-  
+  prefs.end();
+  drawMenu(MAIN_MENU);
 }
 
 void loop() {
@@ -321,8 +324,9 @@ void StartRPMCount(){
   ppm.clear();
   drawMenu(CANCEL_MENU);
   otherOnscreen.clear();
-  otherOnscreen["testPercentage"] = new ProgressBar(0,menuButtons.back()->y+70,TFT_HEIGHT,100,pb,tft,"testPercentage");
-  otherOnscreen["actualRPM"] = new KeyValue(TFT_HEIGHT/2,menuButtons.back()->y+140,40,40,"actualRPM",btn,tft,8,"actualRPM");
+  percentage = 0.0;
+  otherOnscreen["testPercentage"] = new ProgressBar(0,menuButtons.back()->y+70,TFT_HEIGHT,50,pb,tft,"testPercentage");
+  otherOnscreen["actualRPM"] = new KeyValue(0,0,40,40,"actualRPM",btn,tft,1,"actualRPM");
   startAt = -1;
   DoEveryFrame = TestFinished;
   attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
@@ -364,13 +368,17 @@ void GetBackToMainMenu(){
 }
 //doKick
 void setKickDo(){
+  prefs.begin("settings",false);
   doKick = !doKick;
   prefs.putBool("doKick", doKick);
+  prefs.end();
 }
 //stallProtection
 void setStallProtection(){
+  prefs.begin("settings",false);
   stallProtection = !stallProtection;
   prefs.putBool("stallProtection",stallProtection);
+  prefs.end();
 }
 
 

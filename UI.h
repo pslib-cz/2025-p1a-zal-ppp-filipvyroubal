@@ -89,9 +89,8 @@ class Toggle : public UIComponent {
         this->btn.drawButton(state);
 
         this->state = state;
-        if(this->state){
-            this->callback();
-        }
+        
+        
 
     }
     void clicked() override{
@@ -110,13 +109,13 @@ class ProgressBar : public UIComponent {
     ProgressBar(int x, int y, int width, int height, Style style, TFT_eSPI &tft, String id) : UIComponent(x,y,width,height, id), tft(tft){
         this->style = style;
         tft.fillRect(x,y,width,height,style.outline);
-        tft.fillRect(x-10,y-10,width-10,height-10,style.fill);
+        tft.fillRect(x+5,y+5,width-10,height-10,style.fill);
     }
     void clicked() override{}
     void released() override{}
     void setProgress(float percentage){
         int w = percentage*(this->width-20);
-        this->tft.fillRect(x-20,y-20,w,height - 20,this->style.activeFill);
+        this->tft.fillRect(x+5,y+5,w - 10,height - 10,this->style.activeFill);
     }
 };
 
@@ -138,7 +137,7 @@ class KeyValue : public UIComponent {
         void drawString(String text){
             this->tft.setFreeFont(NULL);       // NULL removes the custom font and restores the default font
             this->tft.setTextSize(this->textSize);       // 1 is small (8px), 2 is medium (16px), 3 is large (24px)
-            this->tft.setTextColor(this->style.text);     
+            this->tft.setTextColor(this->style.text,this->style.fill);     
             this->tft.drawString(text.c_str(), this->x, this->y); 
             this->tft.setFreeFont(&FreeMono18pt7b);
         }
