@@ -114,8 +114,8 @@ class ProgressBar : public UIComponent {
     void clicked() override{}
     void released() override{}
     void setProgress(float percentage){
-        int w = percentage*(this->width-20);
-        this->tft.fillRect(x+5,y+5,w - 10,height - 10,this->style.activeFill);
+        int w = percentage*(this->width-10);
+        this->tft.fillRect(x+5,y+5,w,height - 10,this->style.activeFill);
     }
 };
 
@@ -132,6 +132,7 @@ class KeyValue : public UIComponent {
             drawString(label);
         }
         void changeValue(int value){
+            this->tft.fillRect(this->x,this->y,this->width,this->height,this->style.fill);
             drawString(label+": "+String(value));
         }
         void drawString(String text){

@@ -88,7 +88,9 @@ void drawMenu(const std::vector<ConstructButton>& names) {
   // Top and bottom bars
   tft.fillRect(0, 0, TFT_HEIGHT, 30, TFT_YELLOW);
   tft.fillRect(0, TFT_WIDTH - 30, TFT_HEIGHT, 30, TFT_YELLOW);
-
+  for (UIComponent* btnPtr : menuButtons) {
+    delete btnPtr;
+  }
   menuButtons.clear();
 
   int y = 60;
@@ -145,7 +147,7 @@ void DrawGraph(std::vector<int> data, int maxY, int graphX, int graphY, int grap
   tft.fillRect(graphX, graphY, graphW, graphH, TFT_BLACK);
 
   // Calculate horizontal spacing between points
-  int spacingX = graphW / (data.size() - 1);
+  int spacingX = (float)graphW / (float)(data.size() - 1);
 
   // Calculate the first point's Y position 
   // (Inverts the point so higher values go UP on the screen)
@@ -157,7 +159,7 @@ void DrawGraph(std::vector<int> data, int maxY, int graphX, int graphY, int grap
     int nextY = graphY + graphH - ((data[i] * graphH) / maxY);
     nextY = constrain(nextY, graphY, graphY + graphH - 1);
     
-    Point NowPoint = {LastPoint.x + spacingX, nextY};
+    Point NowPoint = {graphX + (int)(i * spacingX), nextY};
     
     // Draw the graph line segment
     tft.drawLine(LastPoint.x, LastPoint.y, NowPoint.x, NowPoint.y, TFT_WHITE);
@@ -169,6 +171,9 @@ void DrawGraph(std::vector<int> data, int maxY, int graphX, int graphY, int grap
 
 void EndMenu(){
   tft.fillScreen(TFT_BLUE);
+  for (UIComponent* btnPtr : menuButtons) {
+    delete btnPtr;
+  }
   menuButtons.clear();
   menuButtons.push_back(new Button((int)TFT_HEIGHT / 2,25,200,50,(String)"Exit",btn,GetBackToMainMenu,tft));
   int maxRPM = 0;
@@ -193,9 +198,12 @@ void EndMenu(){
 
 void errMenu(){
   tft.fillScreen(TFT_BLUE);
+  for (UIComponent* btnPtr : menuButtons) {
+    delete btnPtr;
+  }
   menuButtons.clear();
-  menuButtons.push_back(new Button((int)TFT_HEIGHT / 2,25,200,50,(String)"Exit",btn,GetBackToMainMenu,tft));
-  drawStatusText("Error occured test has not finished",(int)TFT_HEIGHT / 2, 60, 9, TFT_BLACK);
+  menuButtons.push_back(new Button(TFT_HEIGHT/2,25,200,50,(String)"Exit",btn,GetBackToMainMenu,tft));
+  drawStatusText("Error occured test has not finished",0, 60, 4, TFT_BLACK);
 }
 
 void TestFinished(){
@@ -214,10 +222,21 @@ void TestFinished(){
 }
 
 void updateData(){
+  static float lastPercentage = -1.0f;
+  static int lastRPM = -1;
   if (xSemaphoreTake(ppmMutex,portMAX_DELAY)){
+    if (abs(percentage - lastPercentage) > 0.005f) { 
+      static_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
+      lastPercentage = percentage;
+    }
     static_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
     if(!ppm.empty()){
-      static_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(ppm.back());
+      int currentRPM = ppm.back();
+      // Only redraw text if the RPM number actually changed
+      if (currentRPM != lastRPM) {
+        static_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(currentRPM);
+        lastRPM = currentRPM;
+      }
     }
     xSemaphoreGive(ppmMutex);
   }
@@ -323,10 +342,13 @@ void StartRPMCount(){
   delay(500);
   ppm.clear();
   drawMenu(CANCEL_MENU);
+  for (auto& pair : otherOnscreen) {
+    delete pair.second;
+  }
   otherOnscreen.clear();
   percentage = 0.0;
   otherOnscreen["testPercentage"] = new ProgressBar(0,menuButtons.back()->y+70,TFT_HEIGHT,50,pb,tft,"testPercentage");
-  otherOnscreen["actualRPM"] = new KeyValue(0,0,40,40,"actualRPM",btn,tft,1,"actualRPM");
+  otherOnscreen["actualRPM"] = new KeyValue(0,0,TFT_HEIGHT, 30,"actualRPM",btn,tft,1,"actualRPM");
   startAt = -1;
   DoEveryFrame = TestFinished;
   attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
