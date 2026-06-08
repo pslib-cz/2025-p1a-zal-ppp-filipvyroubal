@@ -1,5 +1,17 @@
 # Motor Tester
 
+## CYD Motortester
+
+This project written in c++ for esp32 CYD counts actual RPM of motor based on delta time between two snapshot and LED gate pulses that occured between them. It is controlled by touchscreen interface. For interfacing with touch screen it uses XPT2046_Bitbang for touch and TFT_eSPI for drawing on display. 
+
+### 1 Tech stack
+
+Frontend is basically handled by my own library UI.h which forms another layer on TFT_eSPI and uses it to draw buttons toggles progresbar. Programming language is c++.
+
+#### 1.1 Electric components
+
+As motor driver is used MX1508 LED gate sensor is generic LED gate sensor. Also there is a custom elecrical circuit. <br> <img src="./circuit.png">
+
 ## Functional Requirements: CYD Motor Control & RPM Sensing
 
 This document outlines the functional requirements for a system utilizing the **Cheap Yellow Display (ESP32-2432S028R)** to control a DC motor via PWM and measure its rotational speed using an LED gate (optical) sensor.
@@ -20,26 +32,12 @@ This document outlines the functional requirements for a system utilizing the **
 | FR-10 | Safety | Emergency Shutdown | The system shall provide a dedicated on-screen 'STOP' button to immediately zero the PWM output. |
 | FR-11 | Safety | Stall Protection | The system shall disable PWM output if no pulses are detected for long time (user set) while power is commanded. |
 
-### 2. Detailed Activation Logic (RPM vs. PWM)
-
-#### 2.1 Activation Line Characteristics
-The system follows a specific activation curve where the motor remains stationary until a specific voltage threshold is reached.
-
-* **Dead Zone:** PWM 0 to ~75 (0V - 1.5V). Motor is inactive or humming.
-* **Activation Point:** PWM ~80. The "Stall Voltage" is overcome, and rotation begins.
-* **Operating Range:** PWM 80 to 255. Linear increase in RPM relative to duty cycle.
-
-#### 2.2 Mathematical Model
-The software uses hardware interrupts to ensure accuracy:
-**Time Delta ($dt$):** Time in microseconds between two LED gate interruptions.
-**RPM Formula:** $RPM = \frac{60,000,000}{dt \times \text{pulses\_per\_rev}}$
-
-### 3. Hardware Interface Mapping (CYD Specific)
+### 2. Hardware Interface Mapping (CYD Specific)
 
 | Component | ESP32 Pin (GPIO) | Mode |
 |:---|:---|:---|
-| **Motor PWM** | GPIO 22 or 27 | Output (LEDC) |
-| **LED Gate Sensor** | GPIO 21 | Input (Internal Pull-up) |
+| **Motor PWM** | GPIO 27 | Output (LEDC) |
+| **LED Gate Sensor** | GPIO 22 | Input (Internal Pull-up) |
 | **TFT Display** | Standard SPI | Output |
 | **Touch Controller** | Standard SPI | Input |
 
