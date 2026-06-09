@@ -18,6 +18,8 @@
 
 #include <UI.h>
 
+#include <motorController.h>
+
 
 struct ConstructButton
 {
@@ -53,23 +55,23 @@ struct Point {
 #define CANCEL_MENU std::vector<ConstructButton>{{"CancelTest", CancelTest,false,false}}
 #define SETTINGS_MENU std::vector<ConstructButton>{{"Back", GetBackToMainMenu, false, false},{"doKick",setKickDo,true, doKick},{"stallProtection",setStallProtection,true,stallProtection}}
 
-#define STILL_STALL_PWM 80
+const unsigned int STILL_STALL_PWM = 80;
 
 Preferences prefs;
 bool doKick;
 bool stallProtection;
 
-volatile unsigned long pulseCount = 0;
-volatile unsigned long startAt = -1;
-volatile float percentage = 0;
 
-std::vector<int> ppm = {};
 
-volatile bool testFinished = false;
-volatile bool testExited = false;
-TaskHandle_t CoreOneTask = NULL;
 
-SemaphoreHandle_t ppmMutex;
+
+MotorTest* tester;
+
+
+
+
+
+
 XPT2046_Bitbang ts(XPT2046_MOSI, XPT2046_MISO, XPT2046_CLK, XPT2046_CS);
 TFT_eSPI tft = TFT_eSPI();
 
@@ -180,19 +182,19 @@ void EndMenu(){
   String pwmString = "N/A";
 
   // Protect data reading from cross-core corruption
-  if (xSemaphoreTake(ppmMutex, portMAX_DELAY)) {
-    if (!ppm.empty()) {
-      maxRPM = *std::max_element(ppm.begin(), ppm.end());
-    }
-    if (startAt != -1) {
-      pwmString = String(startAt);
-    }
-    xSemaphoreGive(ppmMutex);
+
+
+  maxRPM = tester->getMaxRPM();
+  int startAt = tester->getStartAt();
+  if (startAt != -1) {
+    pwmString = String(startAt);
   }
+  
+
 
   drawStatusText("Max RPM: " + String(maxRPM), 10, 60,1 ,TFT_WHITE);
   drawStatusText("Start PWM: " + pwmString, 180, 60, 1,TFT_WHITE);
-  DrawGraph(ppm, *std::max_element(ppm.begin(), ppm.end()), 10, 80, 300, 160);
+  DrawGraph(tester->getGraphData(), maxRPM, 10, 80, 300, 160);
 }
 
 
@@ -209,9 +211,8 @@ void errMenu(){
 void TestFinished(){
   getTouchedButton();
   updateData();
-  if (testFinished) {
-    testFinished = false; // Reset the trigger immediately
-    if(testExited){
+  if (tester->Finished()) {
+    if(tester->Error()){
       errMenu();
     }
     else{
@@ -224,28 +225,28 @@ void TestFinished(){
 void updateData(){
   static float lastPercentage = -1.0f;
   static int lastRPM = -1;
-  if (xSemaphoreTake(ppmMutex,portMAX_DELAY)){
-    if (abs(percentage - lastPercentage) > 0.005f) { 
-      static_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
-      lastPercentage = percentage;
-    }
+  float percentage = tester->getPercentage();
+  if (abs(percentage - lastPercentage) > 0.005f) { 
     static_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
-    if(!ppm.empty()){
-      int currentRPM = ppm.back();
-      // Only redraw text if the RPM number actually changed
-      if (currentRPM != lastRPM) {
-        static_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(currentRPM);
-        lastRPM = currentRPM;
-      }
-    }
-    xSemaphoreGive(ppmMutex);
+    lastPercentage = percentage;
   }
+  static_cast<ProgressBar*>(otherOnscreen["testPercentage"])->setProgress(percentage);
+
+  int currentRPM = tester->getLatestRPM();
+  // Only redraw text if the RPM number actually changed
+  if (currentRPM != lastRPM) {
+    static_cast<KeyValue*>(otherOnscreen["actualRPM"])->changeValue(currentRPM);
+    lastRPM = currentRPM;
+  }
+
+  
 }
+
 
 void setup() {
   Serial.begin(115200);
   DoEveryFrame = getTouchedButton;
-  ppmMutex = xSemaphoreCreateMutex();
+  
   // Create the background task on Core 0
   
   // Start the SPI for the touch screen and init the TS library
@@ -265,6 +266,7 @@ void setup() {
   doKick = prefs.getBool("doKick",false);
   stallProtection = prefs.getBool("stallProtection",false);
   prefs.end();
+  tester = new MotorTest(IN2,SENSOR_PIN,PPO,doKick,stallProtection,STILL_STALL_PWM);
   drawMenu(MAIN_MENU);
 }
 
@@ -273,95 +275,21 @@ void loop() {
 }
 
 
-//=================== Motor functions ===================
-
-
-void SetupMX(uint8_t pin){
-  //ledcAttach(pin,5000, 8);
-  ledcAttach(pin, 5000, 8);
-
-}
-void forwardMX(uint8_t pin,int pwm){
-  ledcWrite(pin, pwm);
-}
-void IRAM_ATTR handlePulse(){
-  ++pulseCount;
-}
-void CounterTask(void * pvParameters){
-  unsigned long lastMillis = millis();
-  SetupMX(IN2);
-  if(doKick){
-    forwardMX(IN2,250);
-    Serial.println("doingKick");
-    vTaskDelay(pdMS_TO_TICKS(500));
-  }
-  for(int i = 0;i<=256;){
-    unsigned long millisP = millis()-lastMillis;
-    if(millisP >= 250){
-      noInterrupts();
-      unsigned long snapshotPulses = pulseCount;
-      pulseCount = 0;
-      interrupts();
-      float calculatedPPM = (snapshotPulses * (60000/millisP))/PPO;
-      if (xSemaphoreTake(ppmMutex, portMAX_DELAY)){
-        ppm.push_back(calculatedPPM);
-        if((startAt == -1)&&(calculatedPPM > 0)){
-          startAt = i;
-        }
-        percentage = (float)i/256.0f;
-        xSemaphoreGive(ppmMutex);
-      }
-      lastMillis = millis();
-      ++i;
-      if(stallProtection){
-      if((i >= STILL_STALL_PWM)&&(startAt == -1)){
-        if(xSemaphoreTake(ppmMutex,portMAX_DELAY)){
-          testFinished = true;
-          testExited = true;
-          xSemaphoreGive(ppmMutex);
-        }
-      }
-    }
-    }
-    forwardMX(IN2,i);
-    if(testFinished){
-      forwardMX(IN2,0);
-      break;
-    }
-    
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-  testFinished = true;
-  detachInterrupt(digitalPinToInterrupt(SENSOR_PIN));
-  vTaskDelete(NULL);
-}
-
 //=================== Functions for this menu ===============
 //Start Test
 void StartRPMCount(){
   delay(500);
-  ppm.clear();
   drawMenu(CANCEL_MENU);
   for (auto& pair : otherOnscreen) {
     delete pair.second;
   }
   otherOnscreen.clear();
-  percentage = 0.0;
   otherOnscreen["testPercentage"] = new ProgressBar(0,menuButtons.back()->y+70,TFT_HEIGHT,50,pb,tft,"testPercentage");
   otherOnscreen["actualRPM"] = new KeyValue(0,0,TFT_HEIGHT, 30,"actualRPM",btn,tft,1,"actualRPM");
-  startAt = -1;
+  tester->doKick = doKick;
+  tester->stallProtection = stallProtection;
+  tester->startTest();
   DoEveryFrame = TestFinished;
-  attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handlePulse, RISING);
-  xTaskCreatePinnedToCore(
-    CounterTask,   // Function to implement the task
-    "PulseTask",        // Name of the task
-    4096,               // Stack size in words
-    NULL,               // Task input parameter
-    1,                  // Priority of the task
-    &CoreOneTask,               // Task handle
-    0                   // Core ID (0)
-  );
-
 }
 //Settings
 void OpenSettings(){
@@ -372,15 +300,7 @@ void OpenSettings(){
 //=================== Functions for this menu ===================
 //CancelTest
 void CancelTest(){
-  forwardMX(IN2, 0); 
-  detachInterrupt(digitalPinToInterrupt(SENSOR_PIN));
-  // 3. Delete the running thread if it exists
-  if (CoreOneTask != NULL) {
-    vTaskDelete(CoreOneTask);
-    CoreOneTask = NULL; // Reset handle tracking
-  }
-  // 4. Force the UI to show the final menu metrics screen
-  testFinished = true;
+  tester->stopTest();
 }
 //=================== Functions for this menu ===================
 //Back
