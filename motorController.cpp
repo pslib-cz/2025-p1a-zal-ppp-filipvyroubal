@@ -2,8 +2,15 @@
 #include <algorithm>
 
 static volatile unsigned long globalPulseCount = 0;
+static volatile unsigned long lastInterruptTime = 0;
+
 void IRAM_ATTR handleMotorPulseISR() {
-    globalPulseCount++;
+    unsigned long currentTime = micros();
+    // Ignore interrupts that happen faster than 500 microseconds (adjust based on your max expected RPM)
+    if (currentTime - lastInterruptTime > 500) { 
+        globalPulseCount++;
+        lastInterruptTime = currentTime;
+    }
 }
 
 
