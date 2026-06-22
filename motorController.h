@@ -29,6 +29,7 @@ class MotorTest {
         std::vector<int> ppm;
         float percentage = 0.0f;
         int startAt = -1;
+        int startAtRPM = -1;
         bool isFinished = false;
         bool hasError = false;
 
@@ -52,6 +53,7 @@ class MotorTest {
         int getLatestRPM();
         int getMaxRPM();
         int getStartAt();
+        int getStartAtRPM();
         std::vector<int> getGraphData();
 };
 

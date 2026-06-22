@@ -180,20 +180,24 @@ void EndMenu(){
   menuButtons.push_back(new Button((int)TFT_HEIGHT / 2,25,200,50,(String)"Exit",btn,GetBackToMainMenu,tft));
   int maxRPM = 0;
   String pwmString = "N/A";
+  String RPMString = "N/A";
 
   // Protect data reading from cross-core corruption
 
 
   maxRPM = tester->getMaxRPM();
   int startAt = tester->getStartAt();
+  int startAtRPM = tester->getStartAtRPM();
   if (startAt != -1) {
     pwmString = String(startAt);
+    RPMString = String(startAtRPM);
   }
   
 
 
   drawStatusText("Max RPM: " + String(maxRPM), 10, 60,1 ,TFT_WHITE);
-  drawStatusText("Start PWM: " + pwmString, 180, 60, 1,TFT_WHITE);
+  drawStatusText("Start PWM: " + pwmString, 100, 60, 1,TFT_WHITE);
+  drawStatusText("Start RPM "+ RPMString,180,60,1,TFT_WHITE);
   DrawGraph(tester->getGraphData(), maxRPM, 10, 80, 300, 160);
 }
 

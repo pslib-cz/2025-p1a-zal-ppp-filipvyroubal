@@ -1,4 +1,4 @@
-#include "MotorController.h"
+#include "motorController.h"
 #include <algorithm>
 
 static volatile unsigned long globalPulseCount = 0;
@@ -38,13 +38,14 @@ void MotorTest::runTest(){
             globalPulseCount = 0;
             interrupts();
 
-            float calculatedPPM = (snapshotPulses * (60000/millisP))/ppo;
+            float calculatedPPM = (snapshotPulses * (60000.0f/millisP))/ppo;
             if (xSemaphoreTake(mutex, portMAX_DELAY)){
 
                 ppm.push_back(calculatedPPM);
 
                 if((startAt == -1)&&(calculatedPPM > 0)){
                     startAt = i;
+                    startAtRPM = calculatedPPM;
                 }
 
                 percentage = (float)i/256.0f;
@@ -218,7 +219,14 @@ int MotorTest::getStartAt() {
         temp = startAt; xSemaphoreGive(mutex); }
     return temp;
 }
-
+int MotorTest::getStartAtRPM(){
+    int temp = -1;
+    if(xSemaphoreTake(mutex,portMAX_DELAY)){
+        temp = startAtRPM;
+        xSemaphoreGive(mutex);
+    }
+    return temp;
+}
 std::vector<int> MotorTest::getGraphData() {
     std::vector<int> temp;
     if (xSemaphoreTake(mutex, portMAX_DELAY)) {
